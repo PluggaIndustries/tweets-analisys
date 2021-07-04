@@ -315,7 +315,7 @@ tidy_tweets %>%
 
 Considerazioni sui @user più citati:
 
-> 1.Sono principalmente giornalisti politici
+> 1. Sono principalmente giornalisti politici
 
 
 ## Hashtag correlati
@@ -365,7 +365,8 @@ ggraph(lay) +
 
 ```{r, message=FALSE, warning=FALSE,echo=FALSE}
 find_most_related_words("#kamalaharris")%>%
-  count(word,sort=TRUE)
+  count(word,sort=TRUE)%>%
+  with(wordcloud(word, n, max.words =5))
 ```
 
 
