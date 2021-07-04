@@ -1,0 +1,565 @@
+---
+title: 'Tweets analysis:   #trump vs #biden'
+author: "Altamura Emanuele"
+date: "9/06/2021"
+output:
+  ioslides_presentation:
+    css: style.css
+  slidy_presentation: default
+subtitle: 'NOTA: i dati utilizzati sono riferiti al 2021-06-08  16:50'
+---
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+
+# Installing lib  NOT RUN
+#install.packages("devtools")
+#install.packages("ggplot2")
+#install.packages("dplyr")
+#install.packages("tidytext")
+#install.packages("tidyverse")
+#install.packages("SnowballC")
+#install.packages("wordcloud")
+#install.packages("emoGG")
+#install.packages("stringr")
+#install.packages("emo")
+#install.packages("textclean")
+#install.packages("ggraph")
+#install.packages("igraph")
+#devtools::install_github("dill/emoGG")
+#devtools::install_github("hadley/emo")
+#devtools::install_github("clauswilke/ggtext")
+#devtools::install_github("trinker/textclean")
+#install.packages("ggpubr")
+```
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+knitr::opts_chunk$set(cache= TRUE, message = FALSE, warning = FALSE)
+
+# Lib load
+
+# TODO split the used from slides and not
+library(tidyverse)
+library(twitteR)
+library(ggtext)
+library(devtools)
+library(ggplot2)
+library(dplyr)
+library(tidytext)
+library(SnowballC)
+library(wordcloud)
+library(emo)
+library(systemfonts)
+library(textclean)
+library(igraph)
+library(ggraph)
+library(ggpubr)
+library(rvest)
+
+find_most_related_words <- function(word_src){
+  screen_name_wrd <- tidy_tweets%>%
+  filter(word==word_src)
+wrd_tweets <- semi_join(tidy_tweets,screen_name_wrd, by= "screenName") 
+wrd_tweets%>%
+  filter(type_word!="emoji")
+}
+#%>%
+  #count(word, sort=T)
+
+bigrams_related_to<-function(word_src){
+  txt <-find_most_related_words(word_src)
+  txt%>%
+    rename(word1=word)%>%
+    mutate(word2=word_src)
+}
+
+find_type_word <- function(dataframe){
+  dataframe$type_word <- "word"
+  dataframe<-dataframe%>%
+  mutate(type_word= replace(type_word,startsWith(word,"#"),"hashtag"))%>%  # Get all the token starting with  "#"
+  mutate(type_word= replace(type_word,startsWith(word,"@"),"person"))%>%   # Get all the token starting with  "@"
+  #mutate(type_word= replace(type_word,ji_detect(word),"emoji"))%>%   # Get all the token starting with emoji CHECK FIRST THE EMOJI HANDLER
+  mutate(type_word= replace(type_word,startsWith(word,"<"),"emoji"))%>%  # Get all the token starting with "<"
+  mutate(type_word= replace(type_word,startsWith(word,"https"),"link"))    # Get all the token starting with "https"
+}
+
+
+# Function for plot emojis
+emoji_to_link <- function(x) {
+  paste0("https://emojipedia.org/emoji/",x) %>%
+    read_html() %>%
+    html_nodes("tr td a") %>%
+    .[1] %>%
+    html_attr("href") %>%
+    paste0("https://emojipedia.org/", .) %>%
+    read_html() %>%
+    html_node('div[class="vendor-image"] img') %>%
+    html_attr("src")
+}
+
+
+link_to_img <- function(x, size = 25) {
+  paste0("<img src='", x, "' width='", size, "'/>")
+}
+```
+# Introduzione
+## Introduzione
+<div style="text-align:center"><img width ="800" height="350"  src="images.png"/></div>
+
+
+Con la nascita del web 2.0  il dibattito politico si è spostato sui social che sono un indicatore importante di ciò che viene percepito dall'opinione pubblica.  
+Un caso virale di questa situazione è il dibattito tra l'ex presidente Trump e il neo presidente Biden.   
+Twitter permette facilmente di ottentere i dati e analizzare:     
+
+> 1. Le parole più utilizzate sul dibattito;
+> 1. Gli utenti e gli hashtag correlati;
+> 1. Le emozioni espresse;
+
+
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+
+#SETTING UP TWITTERR AUTH NOT TO RUN
+#Tokens saved in oauthtkones.csv file
+
+
+#authtokens<-read.csv('oauthtokens.csv',header=F) 
+#authtokens$V2 <- gsub(" ", "", as.character(authtokens$V2), fixed = TRUE)
+#Access_token <-  authtokens[[2]][1]
+#Access_token_secret <-  authtokens[[2]][2]
+#consumer_key <-  authtokens[[2]][3]
+#consumer_secret <-  authtokens[[2]][4]
+
+#setup_twitter_oauth(consumer_key,consumer_secret,Access_token,Access_token_secret)
+
+
+
+# Look for two # tweets, formatting as a df and merging them keeping the source info
+# SAVED AS CSV ERGO NOT TO RUN
+
+#raw_tweets_a <- searchTwitter("biden",  n = 1000)
+#raw_tweets_b <- searchTwitter("trump",  n = 1000)
+
+#raw_tweets_a <- twListToDF( raw_tweets_a)
+#raw_tweets_b <- twListToDF( raw_tweets_b)
+
+
+#raw_tweets_a$hashtag <-  rep("biden",nrow(raw_tweets_a))
+#raw_tweets_b$hashtag <-  rep("trump",nrow(raw_tweets_b))
+
+#df<- rbind(raw_tweets_a, raw_tweets_b)
+#write.csv(df,'tweet_#biden#trump.csv', row.names = FALSE) # save it
+
+
+
+df<-read.csv('tweet_#biden#trump.csv')                   # load it
+
+
+# Text analysis
+# Pre-tidy & converting the emoji to text to avoid mistake in unnest_tokens
+df_tidy <- df
+df_tidy$text  <-iconv(df_tidy$text, from ="latin1", to = "ASCII", sub = "byte")  
+df_tidy$text  <- replace_emoji(df_tidy$text)
+df_tidy$text <- gsub(">","> ",df_tidy$text )
+df_tidy$text <- gsub("<"," <",df_tidy$text )
+
+unnested_tweets <-unnest_tokens( tbl = df_tidy, output = word, input = text,to_lower=TRUE,token = 'tweets')
+# remove useless columns
+unnested_tweets <- subset(unnested_tweets, select =-c(favorited,favoriteCount,truncated,statusSource,longitude,latitude,id,replyToSID,replyToUID,replyToSN,retweeted,isRetweet,favorited
+))
+
+# removing stopwords 
+word <-c( "rt" ,"tco", "amp", "l","t.co","https")
+tweets_stop_words <-data.frame(word)
+tidy_tweets <- unnested_tweets %>%
+     anti_join(get_stopwords(language="en",source="stopwords-iso")) %>%
+     anti_join(tweets_stop_words) %>%
+     anti_join(get_stopwords(language="es",source="stopwords-iso")) %>%
+     anti_join(get_stopwords(language="fr",source="stopwords-iso"))%>%
+     anti_join(get_stopwords(language="it",source="stopwords-iso"))
+# CHANGE THE LANGUAGE IF NEED
+
+# changing the data format to get the range of time 
+tidy_tweets$created <- as.POSIXct(tidy_tweets$created)
+tidy_tweets<-tidy_tweets %>%
+  separate(created, c("Date", "Time"), " ")
+
+#get the range of time of the tweets
+
+#unique(tidy_tweets$Date)
+#arrange(tidy_tweets,Time)
+#unique(tidy_tweets$Time)
+
+# Labeling  type_word
+tidy_tweets<- find_type_word(tidy_tweets)
+
+
+```
+# Cosa scrivono gli utenti di Twitter su Biden e Trump?###########
+
+## Prima osservazione
+I dati si riferiscono ad un campione di 1000 tweet che contengono #biden e altrettanti con #trump.
+
+Le parole più utilizzate:
+
+
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+# plotting most used word
+b_tweets <-tidy_tweets %>%
+  filter(hashtag=="biden")%>%
+  filter(type_word=="word")%>%
+   filter(word!="trump")%>%
+  filter(word!="biden")%>%
+  filter(word!="joe")%>%
+  filter(word!="donald")%>%
+  count(word, sort = TRUE)
+
+t_tweets <-tidy_tweets %>%
+  filter(hashtag=="trump")%>%
+  filter(type_word=="word")%>%
+   filter(word!="trump")%>%
+  filter(word!="biden")%>%
+  filter(word!="joe")%>%
+  filter(word!="donald")%>%
+  count(word, sort = TRUE)
+
+#Todo rename n_x to n and add a column hashtag
+b_tweets<-b_tweets%>%arrange(desc(n))%>%head(11)
+b_tweets$hashtag<- rep("biden",nrow(b_tweets))
+
+t_tweets<-t_tweets%>%arrange(desc(n))%>%head(11)
+t_tweets$hashtag<- rep("trump",nrow(t_tweets))
+
+plot<- rbind(t_tweets , b_tweets)
+
+
+  plot %>%
+    group_by(hashtag) %>%
+    arrange(desc(n))%>%
+    ungroup()%>%
+   mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = hashtag)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~hashtag, scales = "free_y") +
+  labs(y = "Most used word",
+       x = NULL) +
+  coord_flip()
+```
+
+
+
+Dal grafico si nota che: 
+
+> 1. Si nota la presenza di altre personalità politiche come  Kamala Harris e Obama;
+> 1. Sono presenti altri termini politici. 
+> 1. È presente anche un numero 6633.
+
+**Cerchiamo spiegazioni di quel numero.**
+
+
+
+## Seconda osservazione
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+# BIGRAM FOR SENTIMENT AND PLOT
+
+df_tidy$text <- gsub("<.*>", "", df_tidy$text)
+#unnested_tweets <-unnest_tokens( tbl = df_tidy, output = word, input = text,)
+df_ngrams <- df_tidy%>%
+  unnest_ngrams( text, output = bigram, n = 2, to_lower=TRUE)%>%
+  count(bigram, sort = TRUE)
+
+
+bigrams_separated <- df_ngrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word)%>%
+  filter(!word1 %in% tweets_stop_words$word) %>%
+  filter(!word2 %in% tweets_stop_words$word)
+
+
+#PLOT BIGRAM
+
+bigram_graph <- bigrams_filtered %>%
+  filter(n > 25) %>%
+  graph_from_data_frame()
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+```
+     
+E qui risulta chiaro che il numero era relativo al risultato di una votazione.
+
+**Dal NYT: "On June 8, 2021, his nomination was confirmed by a vote of 66–33. Renomination to district court under Biden"**
+
+
+> 1. Si notano infatti relative alla nominazione **judge -> district-> u.s**, **confirm -> julien -> xavier -> neals**
+> 1. Sono presenti altre informazioni poco interessanti come **administration, president**
+> 1. Argomento di interesse del pubblico è stata la richiesta da parte di **rudy -> giuliani** 
+> 1. **ejeancarroll -> friend** e **defamation -> suit**  è relativo all'accusa contro Trump
+
+
+# Users citati e hashtag correlati
+
+## Users citati
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+
+# WORDCLOUD
+tidy_tweets %>%
+  filter(tidy_tweets$type_word=="person")%>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words =5))
+```
+
+Considerazioni sui @user più citati:
+
+> 1.Sono principalmente giornalisti politici
+
+
+## Hashtag correlati
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+# WORDCLOUD
+
+tidy_tweets %>%
+  filter(tidy_tweets$type_word=="hashtag")%>%
+  count(word) %>%
+  filter(word!="#trump",
+         word!="#biden",
+         word!="#donaldtrump")%>%
+  with(wordcloud(word, n, max.words =3))
+```
+Considerazioni sui #hashtags più citati:
+
+
+
+>1. Bitcoin 
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+prv <- bigrams_related_to("#bitcoin")%>%
+  count(word1,word2,sort=TRUE)
+
+prv_sentiment<- prv %>%
+  rename(word=word1)%>%
+  left_join(get_sentiments("bing"))
+prv_sentiment[is.na(prv_sentiment)]<-"neutral"
+
+prv_sentiment <- find_type_word(prv_sentiment)
+prv_sentiment<-prv_sentiment%>%
+  filter(type_word!="link")
+
+lay = create_layout(prv_sentiment, layout = "fr")
+
+
+ggraph(lay) +
+  geom_edge_link(aes(color=sentiment)) +
+  geom_node_point() +
+  geom_node_text(aes(label = name))
+
+
+```  
+
+>1. Kamala Harris 
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+find_most_related_words("#kamalaharris")%>%
+  count(word,sort=TRUE)
+```
+
+
+
+
+# UTILIZZO DELLE EMOJI
+## Utilizzo delle emoji sui Twitter
+
+Per questa analisi, è imprescindibile non analizzare anche l'utilizzo di emoji che è uno strumento di espressione delle emozioni sul social dal 2014.
+In questa sezione vedremo:
+
+ Quali sono le emoji più utilizzate
+ La distribuzione delle emoji per i tweets su #biden e #trump
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+
+#Extracting 
+
+#n_a = n of biden emoji occurency
+topic_a_emojis <- df %>%
+  filter(hashtag=="biden")%>%
+  mutate(emoji = ji_extract_all(text)) %>%
+  unnest(cols = c(emoji)) %>%
+  count(emoji, sort = TRUE)%>%
+         rename(n_a=n) 
+#n_b n of trump emoji occurency
+topic_b_emojis <- df %>%
+  filter(hashtag=="trump")%>%
+  mutate(emoji = ji_extract_all(text)) %>%
+  unnest(cols = c(emoji)) %>%
+  count(emoji, sort = TRUE)%>%
+ rename(n_b=n)
+
+emojis <- full_join(topic_b_emojis,topic_a_emojis, by="emoji")
+emojis[is.na(emojis)]<- 0
+
+emojis<-emojis%>%
+  mutate(most_used= n_a + n_b,delta =n_a -  n_b)
+
+emojis<-arrange(emojis,desc(most_used))
+top_emojis <-emojis %>%
+  slice(1:20)%>%
+  mutate(url = map_chr(emoji, slowly(~emoji_to_link(.x), rate_delay(1))),
+         label = link_to_img(url))
+
+```
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+# Hist emoji on top ##### KEEP 
+
+offset <- max(top_emojis$most_used) / 20
+
+top_emojis %>%
+  ggplot(aes(fct_reorder(emoji, most_used, .desc = FALSE), most_used, label = label)) +
+  geom_col() +
+  geom_richtext(aes(y = most_used+ offset), fill = NA, label.color = NA,
+                label.padding = grid::unit(rep(0, 4), "pt")
+  ) +
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) +
+  labs(x = NULL, y ="N° of occurency") +
+  theme_minimal()
+```
+Curioso come le emoji più utilizzate siano Ridere a Crepapelle e a seguire Lampeggiante.
+
+
+Queste sono le emoji più utilizzate ma come si dividono tra i due hashtag?
+
+#  Quali sono le emoji per i singoli hashtag?
+## Vediamo le differenze 
+
+Per rispondere alla domanda, ho analizzato la frequenza relativa del'utilizzo delle emoji:
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+
+# plot biden <-> trump 
+
+top_emojis %>%
+  ggplot(aes(emoji, delta, label = label)) +
+  geom_richtext(aes(y = delta), fill = NA, label.color = NA, # remove background and outline
+                label.padding = grid::unit(rep(0, 4), "pt") # remove padding
+  ) +
+  theme_minimal()+ 
+  coord_flip()+
+  labs(x= "emoji", y = "#trump  <->  #biden")+
+  ggtitle("Distribuzione delle emoji")
+  #ggsave("plot_trump<->biden.png")
+```
+
+Si osserva la distribuzione:
+
+> 1. I tweet con **#trump** hanno più risate;
+> 1. I tweet con **#biden** sono invece caratterizzati da punti esclamativi e lampeggianti;
+
+
+Un piccolo appunto bisogna farlo sulla 
+
+
+
+
+
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+#WHICH EMJI CONTRIBUTE MOST TO A SENTIMENT? ###KEEP
+
+
+#Todo rename n_x to n and add a column hashtag
+#topic_b_emoji<-topic_b_emojis%>%rename(n=n_b)%>%arrange(desc(n))%>%top_n(10)
+#topic_b_emoji$hashtag<- rep("trump",nrow(topic_b_emoji))
+
+#topic_a_emoji<-topic_a_emojis%>%rename(n=n_a)%>%arrange(desc(n))%>%top_n(10)
+#topic_a_emoji$hashtag<- rep("biden",nrow(topic_a_emoji))
+
+#emoji_plot<- rbind(topic_a_emoji,topic_b_emoji)%>%arrange(desc(n))
+
+
+ # emoji_plot %>%
+#    group_by(hashtag) %>%
+ #   #arrange(desc(n))%>%
+#    ungroup()%>%
+#    mutate(emoji = reorder(emoji, n)) %>%
+#  ggplot(aes(emoji, n, fill = hashtag)) +
+#  geom_col(show.legend = FALSE) +
+#  facet_wrap(~hashtag, scales = "free_y") +
+#  labs(y = "Emoji",
+ #      x = NULL) +
+ # coord_flip()
+  #ggsave("emoji_contribute.png")
+```
+
+
+
+## Sentiment analysis
+Utile trovare le emozioni e vedere quali sentimenti si esprimono riguardo ai diversi hashtag come indicatore di ciò che gli utenti pensano o sentono quando si riferiscono ai diversi presidenti.
+
+Ho analizzato le emozioni espresse:
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+# SENTIMENT ANALYSIS 
+# CHOOSE THE USEFUL DICTIONARY
+#  subtract this to negative and put in positive !!!!!!!!!!!!
+bigrams_sentiment_nrc <- bigrams_separated %>%
+  filter(word1 == "not")%>%
+  rename( word = "word2")%>%
+  inner_join(get_sentiments("nrc"))
+
+bigrams_sentiment_nrc1 <- bigrams_separated %>%
+  filter(word1 == "no")%>%
+  rename( word = "word2")%>%
+  inner_join(get_sentiments("nrc"))
+
+  tweets_sentiment_nrc <- tidy_tweets %>%
+  inner_join(get_sentiments("nrc"))%>%
+  rename( nrc = "sentiment") # 10 emotions
+
+
+# Pie chart of sentiment
+
+
+pie_words<- tweets_sentiment_nrc %>%
+  filter(hashtag=="trump")%>%
+  group_by(nrc) %>% # group by sentiment type
+  tally %>% # counts number of rows
+  arrange(desc(n))
+
+ggpubr::ggpie(pie_words, "n", label = "nrc", 
+      fill = "nrc", color = "white", 
+      palette = "Spectral",
+      title="Sentiment #trump")
+
+
+
+pie_words<- tweets_sentiment_nrc %>%
+  filter(hashtag=="biden")%>%
+  group_by(nrc) %>% # group by sentiment type
+  tally %>% # counts number of rows
+  arrange(desc(n))
+
+ggpubr::ggpie(pie_words, "n", label = "nrc", 
+      fill = "nrc", color = "white", 
+      palette = "Spectral",
+      title="Sentiment #biden")
+
+
+```
+
+Risulta che:
+
+> 1. I tweets riguardanti **Trump** hanno in **misura simile** espresso sentimenti **negativi e positivi**, esprimendo invece molta **sorpresa** e a seguire **fiducia**. leggera paura e rabbia.
+> 1. Per quel che riguarda i tweets riguardo **Biden** è presente in maniera preponderante **fiducia e positività**. In maniera **minore** i sentimenti **negativi e attesa**.
+
+
+```{r, message=FALSE, warning=FALSE,echo=FALSE}
+#Bibliografia:
+#https://www.nytimes.com/2021/06/08/us/Senate-confirms-Biden-judges.html ##
+#https://www.bbc.com/news/election-us-2020-55016029  ## Election fraud calaimed by Rudy Giloiani
+#https://www.npr.org/2021/06/08/1004340386/biden-doj-plans-to-continue-to-defend-trump-in-e-jean-carrolls-defamation-lawsui?t=1625140530956 # e.jean carroll vs trump
+```
+# TUTTO MOLTO BELLO
+ 
