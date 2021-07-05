@@ -460,12 +460,6 @@ Si osserva la distribuzione:
 > 1. I tweet con **#biden** sono invece caratterizzati da punti esclamativi e lampeggianti;
 
 
-Un piccolo appunto bisogna farlo sulla 
-
-
-
-
-
 
 ```{r, message=FALSE, warning=FALSE,echo=FALSE}
 #WHICH EMJI CONTRIBUTE MOST TO A SENTIMENT? ###KEEP
@@ -562,5 +556,5 @@ Risulta che:
 #https://www.bbc.com/news/election-us-2020-55016029  ## Election fraud calaimed by Rudy Giloiani
 #https://www.npr.org/2021/06/08/1004340386/biden-doj-plans-to-continue-to-defend-trump-in-e-jean-carrolls-defamation-lawsui?t=1625140530956 # e.jean carroll vs trump
 ```
-# TUTTO MOLTO BELLO
+
  
